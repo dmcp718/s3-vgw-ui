@@ -107,7 +107,7 @@ variable "asg_min_size" {
 }
 
 variable "asg_max_size" {
-  description = "Maximum number of instances in ASG"
+  description = "Maximum number of instances in ASG (forced to 1 when metrics enabled)"
   type        = number
   default     = 3
 
@@ -268,6 +268,12 @@ variable "enable_detailed_monitoring" {
 
 variable "enable_ssm" {
   description = "Enable Systems Manager access"
+  type        = bool
+  default     = true
+}
+
+variable "metrics_enabled" {
+  description = "Enable metrics collection and Grafana dashboard"
   type        = bool
   default     = true
 }

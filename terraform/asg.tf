@@ -44,6 +44,18 @@ resource "aws_security_group_rule" "ssh_ingress" {
   security_group_id = aws_security_group.this.id
 }
 
+resource "aws_security_group_rule" "grafana_ingress" {
+  count = var.metrics_enabled ? 1 : 0
+
+  type        = "ingress"
+  from_port   = 3003
+  to_port     = 3003
+  protocol    = "tcp"
+  cidr_blocks = var.allowed_cidr_blocks
+
+  security_group_id = aws_security_group.this.id
+}
+
 resource "aws_lb" "this" {
   name               = "${local.solution_name}-nlb-${random_id.this.hex}"
   internal           = var.lb_internal
@@ -73,6 +85,27 @@ resource "aws_lb_listener" "s3" {
   tags = local.common_tags
 }
 
+# Listener rule for Grafana metrics dashboard
+resource "aws_lb_listener_rule" "grafana" {
+  count = var.metrics_enabled ? 1 : 0
+
+  listener_arn = aws_lb_listener.s3.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.grafana[0].arn
+  }
+
+  condition {
+    host_header {
+      values = ["s3-metrics.${local.domain_name_clean}"]
+    }
+  }
+
+  tags = local.common_tags
+}
+
 resource "aws_lb_target_group" "s3" {
   name     = "${local.solution_name}-tg-${random_id.this.hex}"
   port     = var.service_port
@@ -89,6 +122,29 @@ resource "aws_lb_target_group" "s3" {
 
   tags = merge(local.common_tags, {
     Name = "${local.solution_name}-target-group"
+  })
+}
+
+# Target group for Grafana metrics dashboard
+resource "aws_lb_target_group" "grafana" {
+  count = var.metrics_enabled ? 1 : 0
+
+  name     = "${local.solution_name}-grafana-tg-${random_id.this.hex}"
+  port     = 3003
+  protocol = "TCP"
+  vpc_id   = module.vpc.vpc_id
+
+  health_check {
+    protocol            = "HTTP"
+    path                = "/api/health"
+    healthy_threshold   = var.health_check_healthy_threshold
+    unhealthy_threshold = var.health_check_unhealthy_threshold
+    interval            = var.health_check_interval
+    matcher             = "200"
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.solution_name}-grafana-target-group"
   })
 }
 
@@ -169,15 +225,24 @@ resource "aws_placement_group" "this" {
   })
 }
 
+# Auto Scaling Group
+# NOTE: When metrics are enabled, ASG is limited to 1 instance because the current
+# monitoring architecture runs Grafana on each instance. Multiple instances would
+# create multiple Grafana endpoints, but Route53 can only point to one.
+# For horizontal scaling with metrics, a centralized monitoring solution is needed.
 resource "aws_autoscaling_group" "this" {
   name_prefix               = "${local.solution_name}-asg-"
-  min_size                  = var.asg_min_size
-  max_size                  = var.asg_max_size
-  desired_capacity          = local.asg_desired_capacity
+  # Force single instance when metrics enabled (monitoring architecture limitation)
+  min_size                  = var.metrics_enabled ? 1 : var.asg_min_size
+  max_size                  = var.metrics_enabled ? 1 : var.asg_max_size
+  desired_capacity          = var.metrics_enabled ? 1 : local.asg_desired_capacity
   vpc_zone_identifier       = module.vpc.private_subnets
   health_check_grace_period = var.health_check_grace_period
   health_check_type         = "ELB"
-  target_group_arns         = [aws_lb_target_group.s3.arn]
+  target_group_arns         = concat(
+    [aws_lb_target_group.s3.arn],
+    var.metrics_enabled ? [aws_lb_target_group.grafana[0].arn] : []
+  )
   placement_group           = aws_placement_group.this.id
 
   # Ensure NAT Gateway and VPC endpoints are ready before launching instances

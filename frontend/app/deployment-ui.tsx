@@ -39,6 +39,12 @@ interface ConfigValues {
   VGW_IAM_DIR: string
   VGW_VIRTUAL_DOMAIN: string
   FQDOMAIN: string
+
+  // Monitoring and Metrics
+  METRICS_ENABLED: string
+  GRAFANA_PASSWORD: string
+  STATSD_SERVER: string
+  PROMETHEUS_RETENTION: string
 }
 
 const defaultValues: ConfigValues = {
@@ -60,6 +66,10 @@ const defaultValues: ConfigValues = {
   VGW_IAM_DIR: "/media/lucidlink/.vgw",
   VGW_VIRTUAL_DOMAIN: "",
   FQDOMAIN: "",
+  METRICS_ENABLED: "true",
+  GRAFANA_PASSWORD: "",
+  STATSD_SERVER: "127.0.0.1:8125",
+  PROMETHEUS_RETENTION: "15d",
 }
 
 const awsRegions = [
@@ -104,7 +114,8 @@ export default function DeploymentUI() {
     awsSecretKey: false,
     llPassword: false,
     s3AccessKey: false,
-    s3SecretKey: false
+    s3SecretKey: false,
+    grafanaPassword: false
   })
 
   // Initialize WebSocket connection
@@ -223,6 +234,11 @@ export default function DeploymentUI() {
     if (!config.ROOT_SECRET_KEY) errors.push("S3 Secret Key is required")
     if (!config.VGW_VIRTUAL_DOMAIN) errors.push("S3 Virtual Domain is required")
     if (!config.FQDOMAIN) errors.push("Base Domain is required")
+
+    // Metrics configuration (only if metrics are enabled)
+    if (config.METRICS_ENABLED === "true") {
+      if (!config.GRAFANA_PASSWORD) errors.push("Grafana password is required when metrics are enabled")
+    }
 
     return errors
   }
@@ -577,6 +593,94 @@ export default function DeploymentUI() {
                       onChange={(e) => updateConfig("VGW_IAM_DIR", e.target.value)}
                     />
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Monitoring and Metrics Configuration */}
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>Monitoring and Metrics</CardTitle>
+                  <CardDescription>Configure metrics collection and monitoring dashboard</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="metrics-enabled">Enable Metrics Collection</Label>
+                      <Select value={config.METRICS_ENABLED} onValueChange={(value) => updateConfig("METRICS_ENABLED", value)}>
+                        <SelectTrigger id="metrics-enabled">
+                          <SelectValue placeholder="Select metrics setting" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">Enabled</SelectItem>
+                          <SelectItem value="false">Disabled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="prometheus-retention">Prometheus Retention</Label>
+                      <Select value={config.PROMETHEUS_RETENTION} onValueChange={(value) => updateConfig("PROMETHEUS_RETENTION", value)}>
+                        <SelectTrigger id="prometheus-retention">
+                          <SelectValue placeholder="Select retention period" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="7d">7 days</SelectItem>
+                          <SelectItem value="15d">15 days</SelectItem>
+                          <SelectItem value="30d">30 days</SelectItem>
+                          <SelectItem value="90d">90 days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {config.METRICS_ENABLED === "true" && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="grafana-password">Grafana Password *</Label>
+                          <div className="relative">
+                            <Input
+                              id="grafana-password"
+                              type={showPasswords.grafanaPassword ? "text" : "password"}
+                              placeholder="Enter Grafana admin password"
+                              value={config.GRAFANA_PASSWORD}
+                              onChange={(e) => updateConfig("GRAFANA_PASSWORD", e.target.value)}
+                              className="pr-10"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() => togglePasswordVisibility('grafanaPassword')}
+                            >
+                              {showPasswords.grafanaPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="statsd-server">StatsD Server</Label>
+                          <Input
+                            id="statsd-server"
+                            placeholder="127.0.0.1:8125"
+                            value={config.STATSD_SERVER}
+                            onChange={(e) => updateConfig("STATSD_SERVER", e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        <p>When metrics are enabled, you'll have access to:</p>
+                        <ul className="list-disc list-inside mt-1">
+                          <li>Prometheus metrics at <code>http://localhost:9090</code></li>
+                          <li>Grafana dashboard at <code>http://localhost:3003</code></li>
+                          <li>Real-time S3 gateway performance metrics</li>
+                        </ul>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </div>

@@ -41,3 +41,16 @@ VGW_VIRTUAL_DOMAIN="<YOUR_S3_DOMAIN>"
 
 # Your base domain (e.g., "yourcompany.com")
 FQDOMAIN="<YOUR_BASE_DOMAIN>"
+
+##--Monitoring and Metrics--##
+# Enable metrics collection (true/false)
+METRICS_ENABLED="true"
+
+# Grafana admin password (change this!)
+GRAFANA_PASSWORD="<YOUR_GRAFANA_PASSWORD>"
+
+# StatsD server address for VersityGW metrics
+STATSD_SERVER="127.0.0.1:8125"
+
+# Prometheus retention period
+PROMETHEUS_RETENTION="15d"

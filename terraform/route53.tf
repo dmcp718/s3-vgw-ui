@@ -11,7 +11,10 @@ resource "aws_acm_certificate" "main" {
 
   domain_name               = local.domain_name_clean
   validation_method         = var.certificate_validation_method
-  subject_alternative_names = ["*.${local.domain_name_clean}", "*.${var.subdomain_name}.${local.domain_name_clean}"]
+  subject_alternative_names = concat(
+    ["*.${local.domain_name_clean}", "*.${var.subdomain_name}.${local.domain_name_clean}"],
+    var.metrics_enabled ? ["s3-metrics.${local.domain_name_clean}"] : []
+  )
 
   lifecycle {
     create_before_destroy = true
@@ -59,6 +62,21 @@ resource "aws_route53_record" "s3_wildcard" {
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = "*.${var.subdomain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.this.dns_name
+    zone_id                = aws_lb.this.zone_id
+    evaluate_target_health = true
+  }
+}
+
+# DNS record for s3-metrics subdomain (s3-metrics.domain.com)
+resource "aws_route53_record" "s3_metrics" {
+  count = var.create_route53_records && var.metrics_enabled ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "s3-metrics"
   type    = "A"
 
   alias {

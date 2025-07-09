@@ -159,6 +159,9 @@ The infrastructure includes comprehensive monitoring:
 - Application Load Balancer health checks
 - Auto Scaling Group monitoring
 - Custom metrics for VersityGW and LucidLink services
+- **Public Grafana Dashboard**: Available at `https://s3-metrics.your-domain.com`
+- **Prometheus Metrics**: Real-time S3 gateway performance metrics
+- **StatsD Integration**: VersityGW metrics collection and visualization
 
 ## Troubleshooting
 
