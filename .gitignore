@@ -1,5 +1,6 @@
 # AWS credentials and sensitive configuration
 packer/script/config_vars.txt
+packer/files/
 
 # Terraform
 terraform/.terraform/
@@ -44,3 +45,6 @@ logs/
 
 # AWS
 .aws/
+
+# Claude configuration
+CLAUDE.md
