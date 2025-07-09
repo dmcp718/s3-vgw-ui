@@ -1,0 +1,47 @@
+##--AWS credentials--##
+# AWS access credentials
+export AWS_ACCESS_KEY_ID="YOUR_AWS_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="YOUR_AWS_SECRET_ACCESS_KEY"
+
+##--AWS deployment options--##
+# AWS region where infrastructure will be deployed
+AWS_REGION="us-east-1"
+export AWS_DEFAULT_REGION="us-east-1"
+
+# EC2 instance type for S3 Gateway (must have instance storage)
+EC2_TYPE="c6id.4xlarge"
+
+# Auto Scaling Group configuration
+ASG_MIN_SIZE="1"
+ASG_MAX_SIZE="3"
+ASG_DESIRED_CAPACITY="1"
+
+##--LucidLink filespace variables--##
+# LucidLink filespace name
+FILESPACE1="your-filespace-name"
+
+# LucidLink user email for authentication
+FSUSER1="your-email@domain.com"
+
+# LucidLink user password (will be encrypted in AMI)
+LLPASSWD1="your-lucidlink-password"
+
+# Root point in filespace (usually "/")
+ROOTPOINT1="/"
+
+# LucidLink version: "2" for legacy, "3" for latest
+FSVERSION="3"
+
+##--versitygw variables--##
+# S3 API root credentials
+ROOT_ACCESS_KEY="s3-root"
+ROOT_SECRET_KEY="your-s3-secret-key"
+
+# Directory for VersityGW IAM data
+VGW_IAM_DIR="/media/lucidlink/.vgw"
+
+# Your domain for S3 virtual-hosted-style requests
+VGW_VIRTUAL_DOMAIN="s3.your-domain.com"
+
+# Your base domain
+FQDOMAIN="your-domain.com"

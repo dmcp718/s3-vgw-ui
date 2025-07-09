@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: s3gw-backend
+    volumes:
+      - ./terraform:/workspace/terraform
+      - ./packer:/workspace/packer
+      - ./scripts:/workspace/scripts
+      - terraform-state:/workspace/state
+      - ~/.aws:/root/.aws:ro
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - AWS_PROFILE=${AWS_PROFILE}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    networks:
+      - s3gw-network
+
+  frontend:
+    build: ./frontend
+    container_name: s3gw-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NEXT_PUBLIC_WS_URL=http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - s3gw-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: s3gw-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+    networks:
+      - s3gw-network
+
+volumes:
+  terraform-state:
+    driver: local
+
+networks:
+  s3gw-network:
+    driver: bridge
