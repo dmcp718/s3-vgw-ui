@@ -85,6 +85,18 @@ build {
     destination = "/tmp/"
   }
 
+  # Always copy monitoring configuration files (they're always generated now)
+  provisioner "file" {
+    sources = [
+      "../files/statsd-mapping.yml",
+      "../files/prometheus.yml",
+      "../files/grafana-datasources.yml", 
+      "../files/grafana-dashboards.yml",
+      "../files/grafana-dashboard.json"
+    ]
+    destination = "/tmp/"
+  }
+
   provisioner "shell" {
     inline = ["echo Running build script..."]
   }

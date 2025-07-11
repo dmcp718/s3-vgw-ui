@@ -8,8 +8,15 @@ set -e
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TERRAFORM_DIR="${SCRIPT_DIR}/terraform"
-PACKER_DIR="${SCRIPT_DIR}/packer"
+
+# In Docker environment, use workspace paths
+if [ -d "/workspace" ]; then
+    TERRAFORM_DIR="/workspace/terraform"
+    PACKER_DIR="/workspace/packer"
+else
+    TERRAFORM_DIR="${SCRIPT_DIR}/terraform"
+    PACKER_DIR="${SCRIPT_DIR}/packer"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -431,6 +438,10 @@ if [ -f "$PACKER_DIR/script/config_vars.txt" ]; then
     if [ -n "$ASG_DESIRED_CAPACITY" ]; then
         export TF_VAR_asg_desired_capacity="$ASG_DESIRED_CAPACITY"
         log_info "Using ASG desired capacity from config: $ASG_DESIRED_CAPACITY"
+    fi
+    if [ -n "$METRICS_ENABLED" ]; then
+        export TF_VAR_metrics_enabled="$METRICS_ENABLED"
+        log_info "Using metrics enabled from config: $METRICS_ENABLED"
     fi
 fi
 

@@ -1,76 +1,14 @@
 mappings:
-  # VersityGW metrics mapping
+  # VersityGW sends DogStatsD format with tags, so we just need simple name mappings
   - match: "versitygw.failed_count"
     name: "versitygw_failed_requests_total"
-    help: "Total number of failed requests"
-    labels:
-      service: "$1"
-      action: "$2"
-      method: "$3"
-      api: "$4"
-    match_type: "regex"
-    regex: "versitygw\\.failed_count\\.([^.]+)\\.([^.]+)\\.([^.]+)\\.([^.]+)"
-
   - match: "versitygw.success_count"
     name: "versitygw_success_requests_total"
-    help: "Total number of successful requests"
-    labels:
-      service: "$1"
-      action: "$2"
-      method: "$3"
-      api: "$4"
-    match_type: "regex"
-    regex: "versitygw\\.success_count\\.([^.]+)\\.([^.]+)\\.([^.]+)\\.([^.]+)"
-
   - match: "versitygw.bytes_written"
     name: "versitygw_bytes_written_total"
-    help: "Total bytes written (PutObject/PutPart)"
-    labels:
-      service: "$1"
-      action: "$2"
-      method: "$3"
-      api: "$4"
-    match_type: "regex"
-    regex: "versitygw\\.bytes_written\\.([^.]+)\\.([^.]+)\\.([^.]+)\\.([^.]+)"
-
   - match: "versitygw.bytes_read"
     name: "versitygw_bytes_read_total"
-    help: "Total bytes read (GetObject)"
-    labels:
-      service: "$1"
-      action: "$2"
-      method: "$3"
-      api: "$4"
-    match_type: "regex"
-    regex: "versitygw\\.bytes_read\\.([^.]+)\\.([^.]+)\\.([^.]+)\\.([^.]+)"
-
   - match: "versitygw.object_created_count"
     name: "versitygw_objects_created_total"
-    help: "Total number of objects created"
-    labels:
-      service: "$1"
-      action: "$2"
-      method: "$3"
-      api: "$4"
-    match_type: "regex"
-    regex: "versitygw\\.object_created_count\\.([^.]+)\\.([^.]+)\\.([^.]+)\\.([^.]+)"
-
   - match: "versitygw.object_removed_count"
     name: "versitygw_objects_removed_total"
-    help: "Total number of objects removed"
-    labels:
-      service: "$1"
-      action: "$2"
-      method: "$3"
-      api: "$4"
-    match_type: "regex"
-    regex: "versitygw\\.object_removed_count\\.([^.]+)\\.([^.]+)\\.([^.]+)\\.([^.]+)"
-
-  # Fallback for any other versitygw metrics
-  - match: "versitygw.*"
-    name: "versitygw_${1}"
-    help: "VersityGW metric"
-    labels:
-      service: "$2"
-    match_type: "regex"
-    regex: "versitygw\\.([^.]+)\\.([^.]+).*"

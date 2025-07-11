@@ -37,9 +37,13 @@ app.get('/api/health', (req, res) => {
 
 // Create environment-specific config file
 async function createConfigFile(config, environment) {
-  const configPath = path.join(WORKSPACE_DIR, 'packer/script/config_vars.txt');
+  const configPath = path.join(WORKSPACE_DIR, '../packer/script/config_vars.txt');
   
-  const configContent = `##--AWS credentials--##
+  console.log('Creating config file at:', configPath);
+  console.log('Full config object keys:', Object.keys(config));
+  
+  try {
+    const configContent = `##--AWS credentials--##
 # AWS access credentials
 export AWS_ACCESS_KEY_ID="${config.AWS_ACCESS_KEY_ID}"
 export AWS_SECRET_ACCESS_KEY="${config.AWS_SECRET_ACCESS_KEY}"
@@ -86,13 +90,30 @@ VGW_VIRTUAL_DOMAIN="${config.VGW_VIRTUAL_DOMAIN}"
 
 # Your base domain
 FQDOMAIN="${config.FQDOMAIN}"
+
+##--Monitoring and Metrics--##
+# Enable metrics collection and monitoring stack
+METRICS_ENABLED="${config.METRICS_ENABLED ? config.METRICS_ENABLED : 'false'}"
+
+# Grafana admin password (required when metrics enabled)
+GRAFANA_PASSWORD="${config.GRAFANA_PASSWORD ? config.GRAFANA_PASSWORD : ''}"
+
+# StatsD server address for metrics collection
+STATSD_SERVER="${config.STATSD_SERVER ? config.STATSD_SERVER : '127.0.0.1:8125'}"
+
+# Prometheus data retention period
+PROMETHEUS_RETENTION="${config.PROMETHEUS_RETENTION ? config.PROMETHEUS_RETENTION : '15d'}"
 `;
 
-  try {
+    console.log('Generated config content length:', configContent.length);
+    console.log('Writing to file...');
+    
     await fs.writeFile(configPath, configContent, 'utf8');
+    console.log('Config file written successfully');
     return true;
   } catch (error) {
     console.error('Error writing config file:', error);
+    console.error('Error stack:', error.stack);
     return false;
   }
 }
@@ -139,7 +160,8 @@ function executeCommand(socket, commandData) {
     const child = spawn('/bin/bash', ['-c', command], {
       cwd: WORKSPACE_DIR,
       env: env,
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true  // Create a new process group for easier termination
     });
 
     // Store the process so we can kill it if needed
@@ -200,6 +222,10 @@ io.on('connection', (socket) => {
   // Handle configuration saving
   socket.on('save-config', async (config) => {
     try {
+      console.log('Received config from frontend:', JSON.stringify(config, null, 2));
+      console.log('METRICS_ENABLED value:', config.METRICS_ENABLED);
+      console.log('GRAFANA_PASSWORD value:', config.GRAFANA_PASSWORD);
+      
       const success = await createConfigFile(config, 'current');
       if (success) {
         socket.emit('output', '\r\n✅ Configuration saved successfully\r\n$ ');
@@ -215,8 +241,47 @@ io.on('connection', (socket) => {
   socket.on('stop-command', () => {
     const process = activeProcesses.get(socket.id);
     if (process && !process.killed) {
-      process.kill('SIGINT');
-      socket.emit('output', '\r\n^C Command stopped\r\n$ ');
+      // Kill the entire process tree (parent and all children)
+      try {
+        // Since we used detached: true, kill the entire process group
+        if (process.pid) {
+          // Kill process group with negative PID (kills all children too)
+          process.kill(-process.pid, 'SIGTERM');
+          
+          // Fallback: if graceful kill fails, force kill after timeout
+          setTimeout(() => {
+            if (!process.killed) {
+              try {
+                process.kill(-process.pid, 'SIGKILL');
+              } catch (e) {
+                // Final fallback - kill just the main process
+                process.kill('SIGKILL');
+              }
+            }
+          }, 3000);
+        } else {
+          // If no PID, just kill the main process
+          process.kill('SIGTERM');
+        }
+        
+        socket.emit('output', '\r\n^C Command stopped (terminating all processes...)\r\n$ ');
+      } catch (error) {
+        socket.emit('output', `\r\nError stopping command: ${error.message}\r\n$ `);
+      }
+      
+      // Clean up the process from our tracking
+      activeProcesses.delete(socket.id);
+      
+      // Additional cleanup - use system pkill to ensure terraform/packer processes are killed
+      setTimeout(() => {
+        const { spawn } = require('child_process');
+        const cleanup = spawn('pkill', ['-f', 'terraform|packer|deploy.sh'], { stdio: 'ignore' });
+        cleanup.on('close', () => {
+          console.log('Cleanup pkill completed');
+        });
+      }, 1000);
+    } else {
+      socket.emit('output', '\r\nNo active command to stop\r\n$ ');
     }
   });
 
@@ -233,7 +298,16 @@ io.on('connection', (socket) => {
     console.log('Client disconnected:', socket.id);
     const process = activeProcesses.get(socket.id);
     if (process && !process.killed) {
-      process.kill();
+      try {
+        // Kill the entire process group on disconnect
+        if (process.pid) {
+          process.kill(-process.pid, 'SIGTERM');
+        } else {
+          process.kill('SIGTERM');
+        }
+      } catch (error) {
+        console.log('Error killing process on disconnect:', error.message);
+      }
     }
     activeProcesses.delete(socket.id);
   });

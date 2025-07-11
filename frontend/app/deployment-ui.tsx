@@ -175,7 +175,24 @@ export default function DeploymentUI() {
   // Terminal is now using simple HTML display - no xterm.js needed
 
   const updateConfig = (key: keyof ConfigValues, value: string) => {
-    setConfig((prev) => ({ ...prev, [key]: value }))
+    setConfig((prev) => {
+      const newConfig = { ...prev, [key]: value }
+      
+      // Auto-adjust ASG settings when metrics are enabled/disabled
+      if (key === 'METRICS_ENABLED') {
+        if (value === 'true') {
+          // When metrics enabled, limit to 1 instance maximum
+          newConfig.ASG_MAX_SIZE = '1'
+          newConfig.ASG_DESIRED_CAPACITY = '1'
+        } else if (value === 'false') {
+          // When metrics disabled, restore default scaling
+          newConfig.ASG_MAX_SIZE = '3'
+          newConfig.ASG_DESIRED_CAPACITY = '1'
+        }
+      }
+      
+      return newConfig
+    })
   }
 
   const togglePasswordVisibility = (field: keyof typeof showPasswords) => {
@@ -183,8 +200,18 @@ export default function DeploymentUI() {
   }
 
   const saveConfig = async () => {
-    if (!socket || !connected) return
+    if (!socket || !connected) {
+      console.log('Cannot save config - socket not connected:', { socket: !!socket, connected })
+      return
+    }
 
+    console.log('Saving config with values:', {
+      METRICS_ENABLED: config.METRICS_ENABLED,
+      GRAFANA_PASSWORD: config.GRAFANA_PASSWORD,
+      STATSD_SERVER: config.STATSD_SERVER,
+      PROMETHEUS_RETENTION: config.PROMETHEUS_RETENTION
+    })
+    
     socket.emit('save-config', config)
     setTerminalOutput(prev => prev + "\n💾 Saving configuration...\n")
   }
@@ -410,7 +437,12 @@ export default function DeploymentUI() {
                         type="number"
                         value={config.ASG_MAX_SIZE}
                         onChange={(e) => updateConfig("ASG_MAX_SIZE", e.target.value)}
+                        disabled={config.METRICS_ENABLED === "true"}
+                        className={config.METRICS_ENABLED === "true" ? "opacity-60" : ""}
                       />
+                      {config.METRICS_ENABLED === "true" && (
+                        <p className="text-xs text-muted-foreground">Auto-set to 1 when metrics enabled</p>
+                      )}
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="asg-desired">Desired</Label>
@@ -426,7 +458,7 @@ export default function DeploymentUI() {
               </Card>
 
               {/* LucidLink Configuration */}
-              <Card>
+              <Card className="lg:col-span-2">
                 <CardHeader>
                   <CardTitle>LucidLink Configuration</CardTitle>
                   <CardDescription>Configure LucidLink filespace connection settings</CardDescription>
@@ -634,6 +666,13 @@ export default function DeploymentUI() {
 
                   {config.METRICS_ENABLED === "true" && (
                     <>
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          <strong>Important:</strong> When metrics are enabled, the Auto Scaling Group is limited to 1 instance maximum. 
+                          This ensures proper monitoring functionality. For horizontal scaling, disable metrics.
+                        </AlertDescription>
+                      </Alert>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                           <Label htmlFor="grafana-password">Grafana Password *</Label>
@@ -674,9 +713,10 @@ export default function DeploymentUI() {
                       <div className="text-sm text-muted-foreground">
                         <p>When metrics are enabled, you'll have access to:</p>
                         <ul className="list-disc list-inside mt-1">
-                          <li>Prometheus metrics at <code>http://localhost:9090</code></li>
-                          <li>Grafana dashboard at <code>http://localhost:3003</code></li>
+                          <li>Prometheus metrics at <code>https://s3-metrics.{config.FQDOMAIN}:9090</code></li>
+                          <li>Grafana dashboard at <code>https://s3-metrics.{config.FQDOMAIN}</code></li>
                           <li>Real-time S3 gateway performance metrics</li>
+                          <li>StatsD exporter at <code>http://localhost:9102/metrics</code></li>
                         </ul>
                       </div>
                     </>

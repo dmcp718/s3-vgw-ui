@@ -80,8 +80,8 @@ resource "aws_route53_record" "s3_metrics" {
   type    = "A"
 
   alias {
-    name                   = aws_lb.this.dns_name
-    zone_id                = aws_lb.this.zone_id
+    name                   = aws_lb.grafana[0].dns_name
+    zone_id                = aws_lb.grafana[0].zone_id
     evaluate_target_health = true
   }
 }

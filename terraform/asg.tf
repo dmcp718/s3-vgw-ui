@@ -47,11 +47,11 @@ resource "aws_security_group_rule" "ssh_ingress" {
 resource "aws_security_group_rule" "grafana_ingress" {
   count = var.metrics_enabled ? 1 : 0
 
-  type        = "ingress"
-  from_port   = 3003
-  to_port     = 3003
-  protocol    = "tcp"
-  cidr_blocks = var.allowed_cidr_blocks
+  type                     = "ingress"
+  from_port                = 3003
+  to_port                  = 3003
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.grafana_alb[0].id
 
   security_group_id = aws_security_group.this.id
 }
@@ -85,22 +85,65 @@ resource "aws_lb_listener" "s3" {
   tags = local.common_tags
 }
 
-# Listener rule for Grafana metrics dashboard
-resource "aws_lb_listener_rule" "grafana" {
+# Security group for Grafana ALB
+resource "aws_security_group" "grafana_alb" {
   count = var.metrics_enabled ? 1 : 0
 
-  listener_arn = aws_lb_listener.s3.arn
-  priority     = 100
+  name        = "${local.solution_name}-grafana-alb-sg-${random_id.this.hex}"
+  description = "Security group for ${local.solution_name} Grafana ALB"
+  vpc_id      = module.vpc.vpc_id
 
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.grafana[0].arn
+  # Allow inbound HTTPS traffic
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  condition {
-    host_header {
-      values = ["s3-metrics.${local.domain_name_clean}"]
-    }
+  # Allow outbound traffic to Grafana instances
+  egress {
+    from_port       = 3003
+    to_port         = 3003
+    protocol        = "tcp"
+    security_groups = [aws_security_group.this.id]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.solution_name}-grafana-alb-sg"
+  })
+}
+
+# Separate ALB for Grafana metrics dashboard
+resource "aws_lb" "grafana" {
+  count = var.metrics_enabled ? 1 : 0
+
+  name               = "${local.solution_name}-grafana-alb-${random_id.this.hex}"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.grafana_alb[0].id]
+  subnets            = module.vpc.public_subnets
+
+  enable_deletion_protection = var.enable_deletion_protection
+
+  tags = merge(local.common_tags, {
+    Name = "${local.solution_name}-grafana-alb"
+  })
+}
+
+# Listener for Grafana ALB
+resource "aws_lb_listener" "grafana" {
+  count = var.metrics_enabled ? 1 : 0
+
+  load_balancer_arn = aws_lb.grafana[0].arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  certificate_arn   = aws_acm_certificate_validation.main[0].certificate_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.grafana[0].arn
   }
 
   tags = local.common_tags
@@ -131,7 +174,7 @@ resource "aws_lb_target_group" "grafana" {
 
   name     = "${local.solution_name}-grafana-tg-${random_id.this.hex}"
   port     = 3003
-  protocol = "TCP"
+  protocol = "HTTP"
   vpc_id   = module.vpc.vpc_id
 
   health_check {

@@ -121,10 +121,13 @@ VersityGW exports the following metrics with tags:
 
 ```bash
 # Start S3 Gateway UI for local development
-./scripts/start-dev.sh
+docker-compose up -d
 
 # Stop S3 Gateway UI
-./scripts/stop-dev.sh
+docker-compose down
+
+# View logs
+docker-compose logs -f
 ```
 
 **⚠️ Note:** Local development only runs the deployment UI (frontend/backend/nginx). All monitoring runs on AWS EC2 instances.
@@ -150,7 +153,7 @@ variable "metrics_enabled" {
 - SSL certificate includes `s3-metrics.domain.com` in Subject Alternative Names
 
 **EC2 Services included when metrics are enabled:**
-- StatsD Exporter, Prometheus, and Grafana containers added to `packer/files.template/compose.yaml`
+- StatsD Exporter, Prometheus, and Grafana containers conditionally added to `packer/files/compose.yaml`
 
 ## Access Points
 
