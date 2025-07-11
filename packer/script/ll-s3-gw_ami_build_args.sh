@@ -7,6 +7,48 @@
 VGW_REGION="$AWS_REGION"
 ##-- Generate ec2 instance user data file
 mkdir -m 777 -p ../files
+
+# Copy monitoring configuration templates to files directory
+echo "Copying monitoring configuration files..."
+echo "Current directory: $(pwd)"
+echo "Looking for monitoring files in: $(realpath ../../monitoring/)"
+
+if [ -f ../../monitoring/statsd-mapping.yml ]; then
+    cp ../../monitoring/statsd-mapping.yml ../files/statsd-mapping.yml
+    echo "✓ Copied statsd-mapping.yml"
+else
+    echo "⚠ Warning: ../../monitoring/statsd-mapping.yml not found"
+    echo "  Checked path: $(realpath ../../monitoring/statsd-mapping.yml 2>/dev/null || echo 'path does not exist')"
+fi
+
+if [ -f ../../monitoring/prometheus.yml ]; then
+    cp ../../monitoring/prometheus.yml ../files/prometheus.yml
+    echo "✓ Copied prometheus.yml"
+else
+    echo "⚠ Warning: ../../monitoring/prometheus.yml not found"
+fi
+
+if [ -f ../../monitoring/grafana/provisioning/datasources/prometheus.yml ]; then
+    cp ../../monitoring/grafana/provisioning/datasources/prometheus.yml ../files/grafana-datasources.yml
+    echo "✓ Copied grafana-datasources.yml"
+else
+    echo "⚠ Warning: ../../monitoring/grafana/provisioning/datasources/prometheus.yml not found"
+fi
+
+if [ -f ../../monitoring/grafana/provisioning/dashboards/dashboards.yml ]; then
+    cp ../../monitoring/grafana/provisioning/dashboards/dashboards.yml ../files/grafana-dashboards.yml
+    echo "✓ Copied grafana-dashboards.yml"
+else
+    echo "⚠ Warning: ../../monitoring/grafana/provisioning/dashboards/dashboards.yml not found"
+fi
+
+if [ -f ../../monitoring/grafana/dashboards/s3-gateway-dashboard.json ]; then
+    cp ../../monitoring/grafana/dashboards/s3-gateway-dashboard.json ../files/grafana-dashboard.json
+    echo "✓ Copied grafana-dashboard.json"
+else
+    echo "⚠ Warning: ../../monitoring/grafana/dashboards/s3-gateway-dashboard.json not found"
+fi
+
 USRDATAF="build_script.sh"
 if [ -e $USRDATAF ]; then
   echo "File $USRDATAF already exists!"
@@ -34,11 +76,13 @@ echo "VGW_PORT=${VGW_PORT:-:9000}" >> ../files/.env
 echo "VGW_IAM_DIR=${VGW_IAM_DIR:-/media/lucidlink/.vgw}" >> ../files/.env
 echo "VGW_VIRTUAL_DOMAIN=${VGW_VIRTUAL_DOMAIN:-}" >> ../files/.env
 
-# # Create Minio config file
-# cat >../files/.env <<EOF
-# ROOT_ACCESS_KEY=$ROOT_ACCESS_KEY
-# ROOT_SECRET_KEY=$ROOT_SECRET_KEY
-# EOF
+# Add monitoring variables when metrics enabled
+if [ "${METRICS_ENABLED}" = "true" ]; then
+    echo "GRAFANA_PASSWORD=${GRAFANA_PASSWORD}" >> ../files/.env
+    echo "STATSD_SERVER=${STATSD_SERVER:-127.0.0.1:8125}" >> ../files/.env
+    echo "PROMETHEUS_RETENTION=${PROMETHEUS_RETENTION:-15d}" >> ../files/.env
+    echo "METRICS_ENABLED=${METRICS_ENABLED}" >> ../files/.env
+fi
 
 # Create build script
 cat >../files/build_script.sh <<EOF 
@@ -176,6 +220,28 @@ sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-
 sudo chmod +x /usr/local/bin/docker-compose
 sudo docker pull versity/versitygw
 sudo docker pull minio/sidekick
+EOF
+
+# Add conditional metrics monitoring images pull
+if [ "${METRICS_ENABLED}" = "true" ]; then
+    cat >>../files/build_script.sh <<EOF
+# Pull monitoring Docker images when metrics enabled
+sudo docker pull prom/statsd-exporter:latest
+sudo docker pull prom/prometheus:latest
+sudo docker pull grafana/grafana:latest
+EOF
+fi
+
+cat >>../files/build_script.sh <<EOF
+# Move monitoring configuration files from /tmp to /s3-gw
+echo "Installing monitoring configuration files..."
+sudo mv /tmp/statsd-mapping.yml /s3-gw/statsd-mapping.yml
+sudo mv /tmp/prometheus.yml /s3-gw/prometheus.yml
+sudo mv /tmp/grafana-datasources.yml /s3-gw/grafana-datasources.yml
+sudo mv /tmp/grafana-dashboards.yml /s3-gw/grafana-dashboards.yml
+sudo mv /tmp/grafana-dashboard.json /s3-gw/grafana-dashboard.json
+sudo chown -R ubuntu:ubuntu /s3-gw/statsd-mapping.yml /s3-gw/prometheus.yml /s3-gw/grafana-*.yml /s3-gw/grafana-*.json
+
 # Clean up all installer files and temporary downloads
 sudo rm -f /s3-gw/lucidinstaller.deb
 sudo rm -f /s3-gw/amazon-cloudwatch-agent.deb  
@@ -189,13 +255,22 @@ sudo apt-get clean
 sudo apt-get autoremove -y
 EOF
 
-# Create systemd service files
+# Create systemd service files (conditional logic in build script, not service file)
+if [ "${FSVERSION}" = "3" ]; then
+    LUCID_BIN="/usr/local/bin/lucid3"
+    INSTANCE_ID="2001"
+else
+    LUCID_BIN="/usr/bin/lucid2"
+    INSTANCE_ID="501"
+fi
+
 cat >../files/lucidlink-1.service <<EOF
 [Unit]
 Description=LucidLink Daemon
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0
+
 [Service]
 Restart=on-failure
 RestartSec=1
@@ -206,11 +281,19 @@ Group=ubuntu
 WorkingDirectory=/s3-gw/lucid
 EnvironmentFile=/s3-gw/lucid/lucidlink-service-vars1.txt
 LoadCredentialEncrypted=ll-password-1:/s3-gw/lucid/ll-password-1.cred
-ExecStart=/bin/bash -c "LUCID_BIN=\$(if [ \"\${FSVERSION}\" = \"3\" ]; then echo \"/usr/local/bin/lucid3\"; else echo \"/usr/bin/lucid2\"; fi); INSTANCE_ID=\$(if [ \"\${FSVERSION}\" = \"3\" ]; then echo \"2001\"; else echo \"501\"; fi); /usr/bin/systemd-creds cat ll-password-1 | \$LUCID_BIN --instance \$INSTANCE_ID daemon --fs \${FILESPACE1} --user \${FSUSER1} --mount-point /media/lucidlink --root-point \${ROOTPOINT1} --root-path /data --config-path /data --fuse-allow-other"
-ExecStop=/bin/bash -c "if [ \"\${FSVERSION}\" = \"3\" ]; then /usr/local/bin/lucid3 exit; else /usr/bin/lucid2 exit; fi"
+ExecStart=/bin/bash -c "/usr/bin/systemd-creds cat ll-password-1 | ${LUCID_BIN} --instance ${INSTANCE_ID} daemon --fs \${FILESPACE1} --user \${FSUSER1} --mount-point /media/lucidlink --root-point \${ROOTPOINT1} --root-path /data --config-path /data --fuse-allow-other"
+ExecStop=${LUCID_BIN} exit
+
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Create s3-gw service file (conditional logic in build script, not service file)
+if [ "${METRICS_ENABLED}" = "true" ]; then
+    COMPOSE_COMMAND="docker compose -f /s3-gw/compose.yaml --profile metrics up"
+else
+    COMPOSE_COMMAND="docker compose -f /s3-gw/compose.yaml up"
+fi
 
 cat >../files/s3-gw.service <<EOF
 [Unit]
@@ -219,6 +302,7 @@ Requires=docker.service lucidlink-1.service
 After=docker.service lucidlink-1.service
 StartLimitBurst=5
 StartLimitIntervalSec=600
+
 [Service]
 TimeoutStartSec=30
 Restart=always
@@ -226,9 +310,10 @@ RestartSec=30
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/s3-gw
+EnvironmentFile=/s3-gw/.env
 Type=simple
-ExecStart=/bin/bash -c "docker compose -f /s3-gw/compose.yaml up"
-ExecStop=/bin/bash -c "docker compose -f /s3-gw/compose.yaml down"
+ExecStart=${COMPOSE_COMMAND}
+ExecStop=docker compose -f /s3-gw/compose.yaml down
 
 [Install]
 WantedBy=multi-user.target
@@ -272,7 +357,9 @@ services:
       # Performance optimizations for c6id.4xlarge
       GOMEMLIMIT: "8GiB"
       GOGC: "50"
-      GOMAXPROCS: "4"
+      GOMAXPROCS: "4"$(if [ "${METRICS_ENABLED}" = "true" ]; then echo '
+      # Metrics configuration
+      VGW_METRICS_STATSD_SERVERS: "statsd-exporter:8125"'; fi)
     volumes:
       - /media/lucidlink:/data
       - ${VGW_IAM_DIR:-/media/lucidlink/.vgw}:${VGW_IAM_DIR:-/media/lucidlink/.vgw}
@@ -306,7 +393,9 @@ services:
       # Performance optimizations for c6id.4xlarge
       GOMEMLIMIT: "8GiB"
       GOGC: "50"
-      GOMAXPROCS: "4"
+      GOMAXPROCS: "4"$(if [ "${METRICS_ENABLED}" = "true" ]; then echo '
+      # Metrics configuration
+      VGW_METRICS_STATSD_SERVERS: "statsd-exporter:8125"'; fi)
     volumes:
       - /media/lucidlink:/data
       - ${VGW_IAM_DIR:-/media/lucidlink/.vgw}:${VGW_IAM_DIR:-/media/lucidlink/.vgw}
@@ -340,7 +429,9 @@ services:
       # Performance optimizations for c6id.4xlarge
       GOMEMLIMIT: "8GiB"
       GOGC: "50"
-      GOMAXPROCS: "4"
+      GOMAXPROCS: "4"$(if [ "${METRICS_ENABLED}" = "true" ]; then echo '
+      # Metrics configuration
+      VGW_METRICS_STATSD_SERVERS: "statsd-exporter:8125"'; fi)
     volumes:
       - /media/lucidlink:/data
       - ${VGW_IAM_DIR:-/media/lucidlink/.vgw}:${VGW_IAM_DIR:-/media/lucidlink/.vgw}
@@ -355,6 +446,88 @@ services:
           cpus: '4.0'
           memory: 8G
 EOF
+
+# Always add monitoring services, but control them with environment variables
+cat >>../files/compose.yaml <<EOF
+  statsd-exporter:
+    image: prom/statsd-exporter:latest
+    restart: always
+    profiles: ["metrics"]
+    ports:
+      - "9102:9102"
+      - "8125:8125/udp"
+    command:
+      - "--statsd.mapping-config=/etc/statsd-mapping.yml"
+      - "--statsd.listen-udp=:8125"
+      - "--web.listen-address=:9102"
+    volumes:
+      - /s3-gw/statsd-mapping.yml:/etc/statsd-mapping.yml:ro
+    depends_on:
+      - versitygw-1
+      - versitygw-2
+      - versitygw-3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+  prometheus:
+    image: prom/prometheus:latest
+    restart: always
+    profiles: ["metrics"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - /s3-gw/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=\${PROMETHEUS_RETENTION:-15d}"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - statsd-exporter
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+  grafana:
+    image: grafana/grafana:latest
+    restart: always
+    profiles: ["metrics"]
+    ports:
+      - "3003:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=\${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_SERVER_ROOT_URL=https://s3-metrics.\${VGW_VIRTUAL_DOMAIN:-localhost}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - /s3-gw/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - /s3-gw/grafana-dashboard.json:/var/lib/grafana/dashboards/s3-gateway-dashboard.json:ro
+      - /s3-gw/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+
+volumes:
+  prometheus_data:
+  grafana_data:
+EOF
+
+
+
+
+
+
 
 echo "EC2 instance build script created: $USRDATAF"
 

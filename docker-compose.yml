@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build: ./backend
@@ -8,6 +6,7 @@ services:
       - ./terraform:/workspace/terraform
       - ./packer:/workspace/packer
       - ./scripts:/workspace/scripts
+      - ./monitoring:/workspace/monitoring:ro
       - terraform-state:/workspace/state
       - ~/.aws:/root/.aws:ro
     environment:
