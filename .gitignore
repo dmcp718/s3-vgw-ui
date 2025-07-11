@@ -13,6 +13,7 @@ terraform/terraform.tfvars
 # Packer
 packer/manifest.json
 packer/images/ami_id.txt
+packer/images/manifest.json
 
 # Node.js
 node_modules/
